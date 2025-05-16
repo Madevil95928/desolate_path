@@ -1,0 +1,389 @@
+#!/usr/bin/env python
+# coding=utf-8
+
+import sys
+import re
+import contextlib
+import threading
+import time
+import random
+import keyboard
+from pprint import pp
+from typing import Union, Optional
+from loguru import logger
+from selenium.webdriver.remote.webelement import WebElement
+from selenium.webdriver.common.by import By
+from src.chrome_multiplex import ChromeMultiplex
+LOCK = threading.Lock()
+STOP_EVENT = threading.Event()
+REPEAT_COUNTS = 1
+logger.configure(handlers=[{"sink": sys.stderr, "level": "INFO"}])
+FULL_SPACE = '\u3000'
+# noinspection DuplicatedCode
+
+
+
+class DesolatePath(ChromeMultiplex):
+    title = "绝境仙途"
+
+    @staticmethod
+    def pp(obj, dest: Optional[str] = None):
+        print('#' * 50)
+        if dest:
+            print(dest, '>>')
+        pp(obj)
+        print('#' * 50)
+        time.sleep(0.1)
+
+    def is_displayed(self, obj: Union[WebElement, str]):
+        if isinstance(obj, str):
+            element = self.safe_xpath(obj)
+            if not element:
+                return False
+            return element.is_displayed()
+        elif isinstance(obj, WebElement):
+            return obj.is_displayed()
+        else:
+            raise TypeError
+
+    @contextlib.contextmanager
+    def start(self):
+        for _ in range(REPEAT_COUNTS):
+            print(' 长按 q 终止自动化程序 '.center(50, '*'))
+        self.goto_page(self.title)
+        t = threading.Thread(target=DesolatePath.monitor)
+        t.start()
+        try:
+            yield
+        finally:
+            with LOCK:
+                STOP_EVENT.set()
+
+    @staticmethod
+    def monitor():
+        STOP_EVENT.clear()
+        while True:
+            time.sleep(0.5)
+            if STOP_EVENT.is_set():
+                break
+            if keyboard.is_pressed('q'):
+                with LOCK:
+                    STOP_EVENT.set()
+                    break
+        for _ in range(REPEAT_COUNTS):
+            print(' 自动化程序已终止 等待最后一个操作完成 '.center(50, '*'))
+
+    def safe_xpath(self, value: str) -> Optional[WebElement]:
+        try:
+            return self.xpath(value)
+        except Exception:
+            return None
+
+    def safe_click(self, value: str) -> bool:
+        element = self.safe_xpath(value)
+        if not element:
+            return False
+        try:
+            self.scroll_to_element(element)
+            element.click()
+            return True
+        except Exception:
+            return False
+
+    def fight(self):
+        """迎战"""
+        logger.debug('迎战')
+        if res := self.safe_click('//button[text()="迎战"]'):
+            logger.success('已点击[迎战]')
+        return res
+
+    def escape(self):
+        """逃跑"""
+        logger.debug('逃跑')
+        if res := self.safe_click('//button[text()="逃跑"]'):
+            logger.success('已点击[逃跑]')
+        return res
+
+    def treasure(self):
+        """打开乾坤袋"""
+        logger.debug('打开乾坤袋')
+        if res := self.safe_click('//button[text()="打开乾坤袋"]'):
+            logger.success('已点击[打开乾坤袋]')
+        return res
+
+    def is_next_level(self):
+        """你发现了一条小道"""
+        element = self.safe_xpath('//p[text()="你发现了一条小道."]')
+        if element:
+            logger.warning("你发现了一条小道")
+        return element
+
+    def is_next_world(self):
+        """你发现了一个进入下一个地域的机会"""
+        element = self.safe_xpath('//span[text()="你发现了一个进入下一个地域的机会"]')
+        if element:
+            logger.warning("你发现了一个进入下一个地域的机会")
+        return element
+
+    def enter(self):
+        """进入"""
+        logger.debug('进入')
+        if res := self.safe_click('//button[text()="进入"]'):
+            logger.success('已点击[进入]')
+        return res
+
+    def roger(self):
+        """知道了"""
+        logger.debug('知道了')
+        if res := self.safe_click('//button[text()="知道了"]'):
+            logger.success('已点击[知道了]')
+        return res
+
+    def is_abandon(self):
+        """弃天"""
+        element = self.safe_xpath('//span[contains(text(), "你发现了一个弃天雕像")]')
+        if element:
+            logger.warning("你发现了一个弃天雕像")
+        return element
+
+    def is_bless(self):
+        """眷天"""
+        element = self.safe_xpath('//span[contains(text(), "你发现了一个眷天雕像")]')
+        if element:
+            logger.warning("你发现了一个眷天雕像")
+        return element
+    
+    def deal(self):
+        """成交"""
+        logger.debug('成交')
+        if res := self.safe_click('//button[text()="成交"]'):
+            logger.success('已点击[成交]')
+        return res
+    
+    def ignore(self):
+        """无视"""
+        logger.debug('无视')
+        if res := self.safe_click('//button[text()="无视"]'):
+            logger.success('已点击[无视]')
+        return res
+
+    def is_boss(self):
+        """BOSS"""
+        element = self.safe_xpath('//span[text()="你发现了一个散布着恐怖威压的地方"]')
+        if element:
+            logger.warning("你发现了一个散布着恐怖威压的地方")
+        return element
+
+    def whats_gain(self):
+        """获取"""
+        list_kw = ['掉落了', '获得了', '找到了', '复活']
+        for kw in list_kw:
+            value = f'//div[@id="combatLogBox"]/p[contains(text(), "{kw}")]'
+            element = self.safe_xpath(value)
+            if element and self.is_displayed('//div[@id="combatLogBox"]'):
+                for _e in self.driver.find_elements(By.XPATH, value):
+                    logger.warning(_e.text)
+        return False
+
+    def whats_log(self):
+        """主页日志获取"""
+        list_kw = ['掉落了', '获得了', '找到了', '复活']
+        for kw in list_kw:
+            value = f'//div[@class="logBox primary-panel"]/descendant::p[contains(text(), "{kw}")]'
+            element = self.safe_xpath(value)
+            if element:
+                for _e in self.driver.find_elements(By.XPATH, value):
+                    if text := _e.text.strip():
+                        logger.warning(text)
+        return False
+
+    def is_upgrade(self):
+        """升级"""
+        element = self.safe_xpath('//h1[text()="升级!"]')
+        if element and self.is_displayed('//div[@id="lvlupPanel"]'):
+            logger.critical("请选择升级属性")
+            return True
+        return False
+
+    def refresh_bonus(self):
+        """重掷"""
+        logger.debug('重掷')
+        if res := self.safe_click('//button[contains(text(), "重掷")]'):
+            logger.success('已点击>[重掷]')
+        return res
+
+    def choose_upgrade_bonus(
+        self, priority: str = 'rare', priority_times: Union[int, float] = 2,
+        weight: Union[int, float] = 0, rare: int = 2, debug: bool = False
+    ):
+        """选择升级属性
+        Args:
+            priority: 优先级，仅可选[rare, bonus]，默认rare，对应权重倍率加成
+            priority_times: 优先级倍率，默认2，及对应优先级加算前乘以2
+            weight: 支持配置最低权重(weight)底线，小于底线默认忽略，默认0
+            rare: 支持配置最低稀有度(rare)底线，小于底线默认忽略，默认2，对应精良
+            debug: 调试用
+        """
+        if priority not in ('rare', 'bonus'):
+            raise ValueError('优先级，仅可选[rare, bonus]，默认rare，对应权重倍率加成')
+        # 稀有度权重 请自行调整
+        weight_rarity = {
+            '传说': 0.5,
+            '史诗': 0.4,
+            '稀有': 0.3,
+            '精良': 0.2,
+            '普通': 0.1
+        }
+        weight_rarity_num = {'传说': 5, '史诗': 4, '稀有': 3, '精良': 2, '普通': 1}
+        # 属性权重 请自行调整
+        weight_bonus = {
+            '攻击': 0.9,
+            '暴击伤害': 0.8,
+            '护体': 0.6,
+            '气血': 0.4,
+            '汲元': 0.1,
+            '暴击几率': 0.1,
+            '攻速': 0.1
+        }
+
+        max_chance = 1 if debug else 3
+        for chance in range(max_chance):
+            time.sleep(0.2)
+            data_bonus = []
+            for num in range(4):
+                btn = self.xpath(f'//button[@id="lvlSlot{num}"]')
+                name, value = [_.text for _ in btn.find_elements(By.TAG_NAME, 'span')[:2]]
+                name = name.strip('UP').strip()
+                b_rare, name = name.split('-')
+                value = re.search(r'[0-9]+\.?[0-9]*%', value).group(0)
+                full_name = f'{b_rare} | {name.center(4, FULL_SPACE)} | {value}'
+                print(full_name)
+                data_bonus.append({
+                    'btn': btn,
+                    'name': name,
+                    'rare': b_rare,
+                    'value': value,
+                })
+            if debug:
+                self.pp(data_bonus, 'data_bonus')
+            time.sleep(0.1)
+
+            weight_by_rare, weight_by_bonus = [], []
+            screen_weight_by_rare, screen_weight_by_bonus = {}, {}
+            for bonus in data_bonus:
+                sum_weight_rare = round(weight_rarity[bonus['rare']] * priority_times + weight_bonus[bonus['name']], 3)
+                sum_weight_bonus = round(weight_bonus[bonus['name']] * priority_times + weight_rarity[bonus['rare']], 3)
+                rare_num = weight_rarity_num[bonus['rare']]
+                weight_by_rare.append({'weight': sum_weight_rare, **bonus, 'rare_num': rare_num})
+                screen_weight_by_rare[bonus['name']] = sum_weight_rare
+                weight_by_bonus.append({'weight': sum_weight_bonus, **bonus, 'rare_num': rare_num})
+                screen_weight_by_bonus[bonus['name']] = sum_weight_bonus
+            logger.warning(f'weight_by_rare={screen_weight_by_rare}')
+            logger.warning(f'weight_by_bonus={screen_weight_by_bonus}')
+
+            def get_max(outer_list_bonus):
+                list_res = []
+                max_weight = -1000000
+                for b in outer_list_bonus:
+                    if b['weight'] == max_weight:
+                        list_res.append(bonus)
+                    elif b['weight'] > max_weight:
+                        max_weight = b['weight']
+                        list_res = [b]
+                return list_res[0] if len(list_res) == 1 else random.choice(list_res)
+
+            final = None
+            if priority == 'rare':
+                list_bonus = [b for b in weight_by_rare if b['weight'] >= weight]
+                if debug:
+                    self.pp(list_bonus, '[rare]list_bonus')
+                if rare:
+                    list_bonus = [b for b in list_bonus if b['rare_num'] >= rare]
+                if debug:
+                    self.pp(list_bonus, '[rare]list_bonus')
+                if list_bonus:
+                    final = list_bonus[0] if len(list_bonus) == 1 else get_max(list_bonus)
+            if priority == 'bonus':
+                list_bonus = [b for b in weight_by_bonus if b['weight'] >= weight]
+                if debug:
+                    self.pp(list_bonus, '[bonus]list_bonus')
+                if rare:
+                    list_bonus = [b for b in list_bonus if b['rare_num'] >= rare]
+                if debug:
+                    self.pp(list_bonus, '[bonus]list_bonus')
+                if list_bonus:
+                    final = list_bonus[0] if len(list_bonus) == 1 else get_max(list_bonus)
+            time.sleep(0.1)
+            if not final:
+                if chance < max_chance - 1:
+                    self.refresh_bonus()
+                    time.sleep(0.5)
+                    continue
+                else:
+                    logger.warning('已用尽[重掷]')
+                    final = get_max(weight_by_rare) if priority == 'rare' else get_max(weight_by_bonus)
+            screen = f'| {final['rare']} | {final["name"]} | {final["value"]} | weight = {final["weight"]} |'
+            logger.error(f'final_res >> {screen}')
+            if not debug:
+                final['btn'].click()
+            return True
+        return True
+
+    def always_fight(self, boss: bool = False):
+        while not STOP_EVENT.is_set():
+            time.sleep(0.3)
+
+            if self.is_upgrade():
+                # priority = 'rare'
+                priority = 'bonus'
+                priority_times = 1.2
+                weight = 0.93
+                rare = 2
+                # debug = True
+                debug = False
+                self.choose_upgrade_bonus(priority, priority_times, weight, rare, debug)
+                if debug:
+                    break
+                continue
+
+            if self.is_boss():
+                self.enter() if boss else self.ignore()
+                continue
+
+            if self.is_abandon():
+                # self.deal()
+                self.ignore()
+                continue
+
+            if self.is_bless():
+                # self.deal()
+                self.ignore()
+                continue
+
+            if any((
+                self.fight(),
+                self.treasure(),
+                self.whats_gain(),
+                # self.whats_log(),
+                self.roger(),
+                # self.enter(),
+                self.ignore()
+            )):
+                continue
+
+    def test(self):
+        element = self.safe_xpath('//div[@id="lvlupPanel"]')
+        self.pp(element.get_attribute('style'))
+        self.pp(element.is_displayed())
+
+
+if __name__ == '__main__':
+    try:
+        dp = DesolatePath()
+        with dp.start():
+            # dp.test()
+            dp.always_fight(True)
+            # dp.always_fight(False)
+    except Exception as e:
+        logger.exception(e)
+        raise e
